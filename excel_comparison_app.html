@@ -125,12 +125,12 @@ def make_comparison(event):
     # real values to ther real values, NULLs to real values, or real values to NULLs
 
     if select_filtering.value == "Changed":
-        xcol = column_compare.value + "_x"
-        ycol = column_compare.value + "_y"
+        xcol = column_compare.value + "_new"
+        ycol = column_compare.value + "_old"
         list_of_cols = [column_ID.value, xcol ,ycol]
         intersection = [x for x in dfnew[column_ID.value].tolist() if x in dfold[column_ID.value].tolist()]
         
-        df_merge = dfnew[dfnew[column_ID.value].isin(intersection)].merge(dfold[dfold[column_ID.value].isin(intersection)],how="inner",on=column_ID.value)
+        df_merge = dfnew[dfnew[column_ID.value].isin(intersection)].merge(dfold[dfold[column_ID.value].isin(intersection)],how="inner",on=column_ID.value,suffixes=('_new', '_old'))
         df_merge_filtered_bothNA = df_merge[list_of_cols].assign(x_NA = lambda x: x[xcol].isnull()).assign(y_NA = lambda x: x[ycol].isnull())
         df_compare = df_merge_filtered_bothNA.assign(Equal = lambda x: x["x_NA"] & x["y_NA"]).query("Equal == False").drop("Equal",axis=1).assign(Equal = lambda x: x[xcol] == x[ycol]).query("Equal == False").drop("Equal",axis=1)
         df_compare = df_compare[list_of_cols]
