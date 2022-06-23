@@ -1,0 +1,183 @@
+<html>
+
+<head>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.1/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/@holoviz/panel@0.13.0/dist/bundled/bootstraptemplate/bootstrap.css">
+
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+    <script type="text/javascript" src="https://unpkg.com/tabulator-tables@4.9.3/dist/js/tabulator.js"></script>
+    <script type="text/javascript" src="https://cdn.bokeh.org/bokeh/release/bokeh-2.4.2.js"></script>
+    <script type="text/javascript" src="https://cdn.bokeh.org/bokeh/release/bokeh-widgets-2.4.2.min.js"></script>
+    <script type="text/javascript" src="https://cdn.bokeh.org/bokeh/release/bokeh-tables-2.4.2.min.js"></script>
+    <script type="text/javascript" src="https://unpkg.com/@holoviz/panel@0.13.0/dist/panel.min.js"></script>
+    <script type="text/javascript">
+      Bokeh.set_log_level("info");
+    </script>
+
+    <link rel="stylesheet" href="https://pyscript.net/alpha/pyscript.css" />
+    <script defer src="https://pyscript.net/alpha/pyscript.js"></script>
+    <script src=
+"//ajax.googleapis.com/ajax/libs/jquery/2.2.4/jquery.min.js">
+    </script>
+<script src=
+"//cdn.rawgit.com/rainabba/jquery-table2excel/1.1.0/dist/jquery.table2excel.min.js">
+</script>
+<script src="https://cdn.jsdelivr.net/gh/linways/table-to-excel@v1.0.4/dist/tableToExcel.js"></script>
+    <py-env>
+        - numpy
+        - pandas
+        - openpyxl
+        - panel==0.13.1a2
+    </py-env>
+</head>
+
+<body>
+    <div class="container-fluid d-flex flex-column vh-100 overflow-hidden" id="container">
+        <nav class="navbar navbar-expand-md navbar-dark sticky-top shadow" id="header"
+            style="background-color: #0f54ea;">
+            <div class="app-header">
+                <a class="title" href="" style="color: #f7f6f3;">PyScript - Python in the Browser</a>
+            </div>
+        </nav>
+
+        <div class="row overflow-hidden" id="content">
+            <div class="col mh-100 float-left" id="main">
+                <div id="fileinput1"></div>
+                <div id="fileinput2"></div>
+                <div id="select_filtering"></div>
+                <div id="Run_comparison"></div>
+                <div id="table"></div>
+            </div>
+        </div>
+    </div>
+    <py-script>
+import asyncio
+import panel as pn
+import pandas as pd
+import openpyxl
+from panel.io.pyodide import show
+
+
+# FileInput widget which corresponds to the Newest file to be uploaded. Data can be extracted using file_input1.value
+# Will appear in row 1
+
+file_input1 = pn.widgets.FileInput(accept='.xlsx', width=180)
+row1 = pn.Row("Upload Newer File", file_input1, height=75)
+
+# FileInput widget for older file to be uploaded. Can be extracted using file_input2.value. "Upload" button when clicked will run the process_file custom function I wrote.
+# Both the FileInput and the Button will appear in row 2
+
+file_input2 = pn.widgets.FileInput(accept='.xlsx', width=180)
+button_upload = pn.widgets.Button(name='Upload', button_type='primary', width=100)
+row2 = pn.Row("Upload Older File",file_input2, button_upload, height=75)
+
+# 3 Dropdown menus: 1 to select the column on which to match rows or to merge dataframes (since data may not be sorted), one for whether we will display rows added/removed/changed, and one for displaying the columns to be displayed if the user chooses "Changed"
+# Note: Two of the dropdown menus are empty. They will be populated once the user has uploaded their two files and clicks the "Upload" button
+# Selected values can be extracted using varname.value and list of all options can be extracted using varname.options
+# The 3 menus will appear in row 3
+
+column_ID = pn.widgets.Select(name='Select Identifier Column', options=[])
+column_compare = pn.widgets.Select(name='Changed Column (optional)', options=[])
+select_filtering = pn.widgets.Select(name='Select Method', options=['Removed','Added','Changed'])
+row3 = pn.Row(column_ID, select_filtering, column_compare, height=75)
+
+
+# Added "Run" button that will call the make_comparison custom function, which should return the user's desired dataframe
+
+run_comparison = pn.widgets.Button(name='Run', button_type='primary', width=100)
+row4 = pn.Row(run_comparison, height = 75)
+
+table = pn.widgets.Tabulator(pagination='remote', page_size=10)
+document.getElementById('table').style.display = 'none'
+
+def process_file(event):
+    if file_input1.value is not None and file_input2.value is not None:
+        dfnew = pd.read_excel(io.BytesIO(file_input1.value))
+        dfold = pd.read_excel(io.BytesIO(file_input2.value))
+        
+
+	# Populate the dropdown menus with the column names of the dataframes
+        column_ID.options = dfnew.columns.tolist()
+        column_compare.options = dfnew.columns.tolist()
+
+button_upload.on_click(process_file)
+
+def make_comparison(event):
+    if file_input1.value is not None and file_input2.value is not None:
+        dfnew = pd.read_excel(io.BytesIO(file_input1.value))
+        dfold = pd.read_excel(io.BytesIO(file_input2.value))
+
+    # Dataframe to be made if the user wants to see which rows have been added from last weeks report
+
+    if select_filtering.value == "Added":
+        df_compare = dfnew[dfnew[column_ID.value].isin(dfold[column_ID.value]) == False]
+
+    # Dataframe to be made if the user wants to see which rows have been removed from last weeks report
+
+    if select_filtering.value == "Removed":
+        df_compare = dfold[dfold[column_ID.value].isin(dfnew[column_ID.value]) == False]
+
+    # For changed, I decided I only want to display the "Identifer" column that the user chooses and the "Column of interest" that the user also chooses.
+    # So the dataframe I want to display to the screen has 3 columns: the Identifier column, and Column of interest from both the old and new excel file.
+    # VERY IMPORTANT NOTE: I do not want to display rows where both entries are NULL,NaN,NaT, etc. I only want to display rows where the entries have changed from
+    # real values to ther real values, NULLs to real values, or real values to NULLs
+
+    if select_filtering.value == "Changed":
+        xcol = column_compare.value + "_x"
+        ycol = column_compare.value + "_y"
+        list_of_cols = [column_ID.value, xcol ,ycol]
+        intersection = [x for x in dfnew[column_ID.value].tolist() if x in dfold[column_ID.value].tolist()]
+        
+        df_merge = dfnew[dfnew[column_ID.value].isin(intersection)].merge(dfold[dfold[column_ID.value].isin(intersection)],how="inner",on=column_ID.value)
+        df_merge_filtered_bothNA = df_merge[list_of_cols].assign(x_NA = lambda x: x[xcol].isnull()).assign(y_NA = lambda x: x[ycol].isnull())
+        df_compare = df_merge_filtered_bothNA.assign(Equal = lambda x: x["x_NA"] & x["y_NA"]).query("Equal == False").drop("Equal",axis=1).assign(Equal = lambda x: x[xcol] == x[ycol]).query("Equal == False").drop("Equal",axis=1)
+        df_compare = df_compare[list_of_cols]
+        
+    # data gets saved to Tabulator object and is displayed to user
+    table.value = df_compare
+    document.getElementById('table').style.display = 'block'
+
+run_comparison.on_click(make_comparison)
+
+await show(row1, 'fileinput1')
+await show(row2, 'fileinput2')
+await show(row3, 'select_filtering')
+await show(row4, 'Run_comparison')
+await show(table, 'table')
+
+    </py-script>
+
+<script>function exportTableToExcel(tableID, filename = ''){
+    var downloadLink;
+    var dataType = 'application/vnd.ms-excel';
+    var tableSelect = document.getElementById(tableID);
+    var tableHTML = tableSelect.outerHTML.replace(/ /g, '%20');
+    
+    // Specify file name
+    filename = filename?filename+'.xlsx':'excel_data.xlsx';
+    
+    // Create download link element
+    downloadLink = document.createElement("a");
+    
+    document.body.appendChild(downloadLink);
+    
+    if(navigator.msSaveOrOpenBlob){
+        var blob = new Blob(['\ufeff', tableHTML], {
+            type: dataType
+        });
+        navigator.msSaveOrOpenBlob( blob, filename);
+    }else{
+        // Create a link to the file
+        downloadLink.href = 'data:' + dataType + ', ' + tableHTML;
+    
+        // Setting the file name
+        downloadLink.download = filename;
+        
+        //triggering the function
+        downloadLink.click();
+    }
+}</script>
+  <button onclick="exportTableToExcel('table', 'exportedData')">Export Table Data To Excel File</button>
+    </body>
